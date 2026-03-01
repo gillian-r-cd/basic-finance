@@ -253,8 +253,20 @@ def _build_verifier_context(system_prompt: str, plan, learner, unit: dict,
             parts.append(f"  Layer {ln} ({layer_names[ln]}): {marker}")
         passed_count = sum(1 for v in layers.values() if v == "passed")
         parts.append(f"Layers passed so far: {passed_count}/4")
-        parts.append(f"You are currently testing Layer {current_layer}. Do NOT ask about other layers until this one is resolved.")
-        if passed_count >= 3:
+        parts.append(f"You are currently testing Layer {current_layer} ({layer_names.get(current_layer, '')}).")
+        # Tell the Verifier what comes next so it can transition within one response
+        next_pending = None
+        for ln in range(current_layer + 1, 5):
+            if layers.get(str(ln), "pending") == "pending":
+                next_pending = ln
+                break
+        if next_pending:
+            parts.append(f"AFTER passing Layer {current_layer}: immediately proceed to "
+                         f"Layer {next_pending} ({layer_names[next_pending]}). "
+                         f"Ask the Layer {next_pending} question in the SAME response.")
+        if passed_count + 1 >= 3 and not next_pending:
+            parts.append("If the learner passes this layer, all layers are complete. Issue [UNIT_PASSED: score=N].")
+        elif passed_count >= 3:
             parts.append("The learner has passed 3+ layers. If their current answer is also satisfactory, you may issue [UNIT_PASSED: score=N].")
     else:
         parts.append("\n--- VERIFICATION PROGRESS ---")
