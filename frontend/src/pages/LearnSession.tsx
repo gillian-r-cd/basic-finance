@@ -40,10 +40,11 @@ export default function LearnSession() {
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [loading, setLoading] = useState(true);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = messagesContainerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   };
 
   useEffect(() => {
@@ -91,16 +92,19 @@ export default function LearnSession() {
     fetchSessionData();
   }, [sessionId]);
 
-  const handleSend = async () => {
-    if (!input.trim() || !sessionId) return;
+  const handleSend = async (autoContent?: string) => {
+    const content = autoContent || input.trim();
+    if (!content || !sessionId) return;
     
-    const userMsg: Message = { id: Date.now().toString(), role: 'user', content: input, type: 'text' };
+    const userMsg: Message = { id: Date.now().toString(), role: 'user', content, type: 'text' };
     setMessages(prev => [...prev, userMsg]);
-    setInput('');
+    if (!autoContent) setInput('');
     setIsTyping(true);
 
     const asstMsgId = (Date.now() + 1).toString();
     setMessages(prev => [...prev, { id: asstMsgId, role: 'assistant', content: '', thinking: '', type: 'text' }]);
+
+    let shouldAutoStartTeaching = false;
 
     try {
       const response = await fetch(`http://localhost:8001/api/sessions/${sessionId}/messages`, {
@@ -150,12 +154,16 @@ export default function LearnSession() {
               ));
               
               if (data.phase_transition) {
+                 const prevPhase = sessionData?.session?.phase;
                  setSessionData(prev => prev ? { ...prev, session: { ...prev.session, phase: data.phase_transition } } : prev);
                  setArtifacts(prev => [...prev, { 
                    id: Date.now().toString(), 
                    type: 'phase_transition', 
                    rationale: `System automatically transitioned to ${data.phase_transition} phase.` 
                  }]);
+                 if (data.phase_transition === 'teaching' && prevPhase === 'diagnosis') {
+                   shouldAutoStartTeaching = true;
+                 }
               }
               
               if (data.unit_changed) {
@@ -181,6 +189,13 @@ export default function LearnSession() {
     } finally {
       setIsTyping(false);
     }
+
+    if (shouldAutoStartTeaching) {
+      await fetchSessionData();
+      const hasChinese = /[\u4e00-\u9fff]/.test(sessionData?.plan?.intent || '');
+      const autoMsg = hasChinese ? "好的，让我们开始学习吧！" : "Great, let's start learning!";
+      setTimeout(() => handleSend(autoMsg), 500);
+    }
   };
 
   if (loading) {
@@ -192,7 +207,7 @@ export default function LearnSession() {
   return (
     <div className="flex h-screen bg-[#1e1e1e] text-gray-100 overflow-hidden font-sans">
       {/* Left Sidebar */}
-      <div className="w-64 bg-[#252526] border-r border-[#333] flex flex-col p-4 overflow-y-auto">
+      <div className="w-64 bg-[#252526] border-r border-[#333] flex flex-col p-4 overflow-y-auto min-h-0 shrink-0">
         <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">Learning Path</h2>
         {sessionData?.plan?.path?.map((unit: any, index: number) => {
           const isCurrent = unit.unit_id === sessionData?.current_unit?.unit_id;
@@ -227,7 +242,7 @@ export default function LearnSession() {
       </div>
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col relative">
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         <div className="h-14 border-b border-[#333] flex items-center px-6 shrink-0 bg-[#252526] justify-between">
           <div className="flex items-center">
             <h1 className="font-semibold text-lg flex items-center gap-2">
@@ -245,7 +260,7 @@ export default function LearnSession() {
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div ref={messagesContainerRef} className="flex-1 overflow-y-auto min-h-0 p-6 space-y-6">
           {messages.length === 0 && (
             <div className="h-full flex flex-col items-center justify-center text-gray-500">
               <BrainCircuit className="w-16 h-16 mb-4 opacity-50" />
@@ -281,11 +296,11 @@ export default function LearnSession() {
               </div>
             </div>
           ))}
-          <div ref={messagesEndRef} />
+          
         </div>
 
         {/* Input Area */}
-        <div className="p-4 bg-[#252526] border-t border-[#333]">
+        <div className="shrink-0 p-4 bg-[#252526] border-t border-[#333]">
           <div className="max-w-4xl mx-auto relative flex items-center">
             <input 
               type="text" 
@@ -296,7 +311,7 @@ export default function LearnSession() {
               className="w-full bg-[#1e1e1e] border border-[#3c3c3c] rounded-lg py-3 pl-4 pr-12 focus:outline-none focus:border-blue-500 transition-colors"
             />
             <button 
-              onClick={handleSend}
+              onClick={() => handleSend()}
               disabled={isTyping || !input.trim()}
               className="absolute right-2 p-2 text-gray-400 hover:text-white disabled:opacity-50 transition-colors"
             >
@@ -307,7 +322,7 @@ export default function LearnSession() {
       </div>
 
       {/* Right Sidebar - Artifacts */}
-      <div className="w-72 bg-[#252526] border-l border-[#333] flex flex-col p-4 overflow-y-auto">
+      <div className="w-72 bg-[#252526] border-l border-[#333] flex flex-col p-4 overflow-y-auto min-h-0 shrink-0">
         <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2">
           <FileCheck className="w-4 h-4" />
           System Decisions

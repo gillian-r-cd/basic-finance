@@ -273,13 +273,6 @@ async def orchestrate_message(db: Session, session_id: str, user_message: str):
     current_phase = context["phase"]
     phase_turn_count = context.get("phase_turn_count", 0)
 
-    # Diagnosis hard cutoff: force to teaching after 3 turns
-    if current_phase == "diagnosis":
-        cutoff = _handle_diagnosis_cutoff(db, session_id, phase_turn_count)
-        if cutoff:
-            context = assemble_context(db, session_id, user_message)
-            current_phase = context["phase"]
-
     user_msg_db = Message(
         id=str(uuid.uuid4()),
         session_id=session_id,
@@ -329,6 +322,14 @@ async def orchestrate_message(db: Session, session_id: str, user_message: str):
                 _handle_diagnosis_complete(
                     db, session_id, markers.get("diagnosis_result"))
                 phase_transition = "teaching"
+            elif (current_phase == "diagnosis"
+                  and not markers.get("diagnosis_complete")
+                  and phase_turn_count + 1 >= 3):
+                _handle_diagnosis_complete(
+                    db, session_id, markers.get("diagnosis_result"))
+                phase_transition = "teaching"
+                print(f"[ORCHESTRATOR] Diagnosis post-response cutoff at "
+                      f"turn {phase_turn_count + 1}. Transitioning to teaching.")
 
             if phase_transition == "verification":
                 _handle_phase_transition(db, session_id)
